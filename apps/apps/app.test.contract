@@ -1,0 +1,6 @@
+test "reader and editor switch"
+  expect tree has "editor"
+  tap "mode"
+  expect tree has "reader"
+  tap "mode"
+  expect tree has "editor"
