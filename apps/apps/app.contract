@@ -1,236 +1,39 @@
-// Apps: the view. app.ts answers what it asks for. Colours, fonts,
-// sizes and the safe area are left unsaid, so each platform supplies its own:
-// the header is the navigation bar, its heading the title, its button a bar item.
-use ConvexLive from "@exact/convex"
+shape Draft
+  body: string
 
-shape Language
-  resolvedLocale: string
-
-shape LanguageChoice
-  tag: string
-  label: string
-
-shape Languages
-  choices: LanguageChoice[]
-
-shape Counter
-  count: number
-
-shape IncrementReply
-  ok: bool
-
-shape AuthReply
-  signedIn: bool
-  name: string
-  google: bool
-  error: string
-
-shape GoogleReply
-  error: string
-
-routes nav
-  home "/"
-
-style LanguagePanel
-  padding=12 gap=4 border-radius=14
-  background-color="-exact-secondary-background"
-
-// Exact checks literal t() keys at compile time. Map the codes from auth.ts
-// here so new errors get a localized message and unknown codes fall back safely.
-fn authErrorText(code: string): string = (
-  code == "session-check" ? t("auth.error.sessionCheck") :
-  code == "session-update" ? t("auth.error.sessionUpdate") :
-  code == "rate-limited" ? t("auth.error.rateLimit") :
-  code == "invalid-credentials" ? t("auth.error.credentials") :
-  code == "username-taken" ? t("auth.error.usernameTaken") :
-  code == "password-short" ? t("auth.passwordHint") :
-  code == "password-common" ? t("auth.error.passwordCommon") :
-  code == "username-invalid" ? t("auth.error.usernameInvalid") :
-  code == "password-invalid" ? t("auth.error.passwordInvalid") :
-  code == "create-account" ? t("auth.error.createAccount") :
-  code == "google-failed" ? t("auth.error.googleFailed") :
-  code == "google-cancelled" ? t("auth.error.googleCancelled") :
-  code == "google-cancelled-web" ? t("auth.error.googleCancelledWeb") :
-  code == "google-incomplete" ? t("auth.error.googleIncomplete") :
-  code == "sign-out" ? t("auth.error.signOut") :
-  t("auth.error.signIn")
-)
-
-component Apps
-  resource language = exactTime() as shape Language
-  resource localeList = locales() as shape Languages
-  derive languages = localeList.choices
-  derive languageName = match first(languages.filter(choice => choice.tag == language.resolvedLocale)) {
-    case some(choice) => choice.label,
-    case none => language.resolvedLocale
-  }
-  resource live = live() as shape ConvexLive else empty(status="connecting")
-  resource counter = counter(live.rev) as shape Counter else empty(count=-1)
-  mutation incremented as shape IncrementReply
-  mutation checkedSession as shape AuthReply then sessionChecked
-  mutation changedSession as shape AuthReply then sessionChanged
-  mutation googleBrowser as shape GoogleReply then googleBrowserFinished
-  state authReady = false
-  state authAttempted = false
-  state signedIn = false
-  state account = ""
-  state googleAvailable = false
-  state authError = ""
-  state username = ""
-  state password = ""
-  state creating = false
-  derive authChanging = pending(changedSession) or pending(googleBrowser)
-  derive authBusy = authChanging or pending(checkedSession)
-  state liked = false
-  state waited = 0
-  state wait = 1
-  task restore when not authAttempted
-    after(1, checkSession)
-  task renew when authReady and not authChanging
-    every(30000, checkSession)
-  task reconnect when live.status == "closed"
-    every(1000, retry)
-  task recovered when live.status == "ready" and wait > 1
-    after(1000, resetWait)
-  action chooseLanguage(locale: string)
-    setLocale(locale)
-  action checkSession
-    if not authBusy
-      authAttempted = true
-      send checkedSession = restoreSession()
-  action sessionChecked
-    match checkedSession
-      case some(result)
-        if result.error == ""
-          authReady = true
-          signedIn = result.signedIn
-          account = result.name
-          googleAvailable = result.google
-          authError = ""
-        else if not authReady
-          authError = result.error
-      case none
-        authError = "session-check"
-  action sessionChanged
-    match changedSession
-      case some(result)
-        authError = result.error
-        if result.error == ""
-          signedIn = result.signedIn
-          account = result.name
-          googleAvailable = result.google
-          username = ""
-          creating = false
-      case none
-        authError = "session-update"
-  action editUsername(value: string)
-    username = value
-  action editPassword(value: string)
-    password = value
-  action toggleCreate
-    creating = not creating
-    authError = ""
-    password = ""
-  action submitPassword
-    if not authBusy and username.trim() != "" and password != ""
-      authError = ""
-      send changedSession = passwordSession(username, password, creating)
-      password = ""
-  action submitGoogle
-    if googleAvailable and not authBusy
-      authError = ""
-      password = ""
-      send googleBrowser = openGoogleSession()
-  action cancelGoogle
-    if pending(googleBrowser)
-      send googleBrowser = cancelGoogleSession()
-  action googleBrowserFinished
-    match googleBrowser
-      case some(result)
-        if result.error == ""
-          send changedSession = finishGoogleSession()
-        else
-          authError = result.error
-      case none
-        authError = "google-failed"
-  action logout
-    if not authBusy
-      authError = ""
-      send changedSession = signOut()
-  action like
-    liked = not liked
-  action increment
-    if live.status == "ready" and counter.count >= 0 and not pending(incremented)
-      send incremented = increment()
-  action retry
-    if waited + 1 >= wait
-      waited = 0
-      wait = min(wait * 2, 16)
-      refresh live
-    else
-      waited = waited + 1
-  action resetWait
-    wait = 1
-    waited = 0
-  action reconnectNow
-    refresh live
-    refresh counter
+component Paperstack
+  resource kept = loadDraft() as shape Draft else empty(body="")
+  mutation written as shape Draft
+  state body = ""
+  state edited = false
+  state reading = false
+  derive current = edited ? body : kept.body
+  action edit(value)
+    body = value
+    edited = true
+    send written = saveDraft(value)
+  action toggle
+    reading = not reading
+  action bold
+    format("draft", "bold")
+  action heading
+    format("draft", "heading", "2")
   view
-    main testId="root" navigationKey=`${top(nav).id}` width="100%" height="100%"
-      for e in stack(nav) key=e.id
-        // Keep the cover display's physical side controls clear in either direction.
-        column navigationKey=`${e.id}` navigationScroll="content" position="absolute" inset=0 display="flex" flex-direction="column" padding-left="var(--exact-safe-area-inset-left)" padding-right="var(--exact-safe-area-inset-right)"
-          header display="flex" align-items="center"
-            text t("app.title") role="heading" aria-level=1 flex=1
-            button press=like aria-label=(liked ? t("app.unlike") : t("app.like")) testId="like"
-              image (liked ? "symbol:heart-fill" : "symbol:heart")
-          scroll id="content" flex=1 min-height=0 padding=16
-            column gap=12 align-items="flex-start"
-              text t("app.greeting", name=t("app.name")) testId="greeting"
-              if languages.length > 1
-                column class=LanguagePanel align-items="stretch" width="100%" max-width="26.25rem" box-sizing="border-box"
-                  select value=language.resolvedLocale change=chooseLanguage aria-label=t("language.picker", name=languageName) testId="language-picker"
-                    for choice in languages key=choice.tag
-                      option choice.label value=choice.tag
-                  button press=chooseLanguage("") testId="language-system"
-                    text t("language.system")
-              column gap=10 width="100%" max-width="26.25rem"
-                text (signedIn ? t("auth.account") : creating ? t("auth.createTitle") : t("auth.signIn")) role="heading" aria-level=2 font="-exact-title2"
-                if authReady and signedIn
-                  text account testId="account-name"
-                  button press=logout disabled=authBusy testId="logout"
-                    text (pending(changedSession) ? t("auth.signingOut") : t("auth.signOut"))
-                else if authReady
-                  input id="username" value=username input=editUsername autocomplete="username" placeholder=t("auth.username") aria-label=t("auth.username") testId="username" disabled=authChanging
-                  input id="password" type="password" value=password input=editPassword submit=submitPassword autocomplete=(creating ? "new-password" : "current-password") placeholder=t("auth.password") aria-label=t("auth.password") testId="password" disabled=authChanging
-                  if creating
-                    text t("auth.passwordHint") font="-exact-footnote" color="-exact-secondary-label"
-                  button press=submitPassword disabled=(authBusy or username.trim() == "" or password == "") buttonStyle="filled" testId="password-submit"
-                    text (creating ? t("auth.create") : t("auth.signIn"))
-                  button press=toggleCreate disabled=authChanging testId="toggle-create"
-                    text (creating ? t("auth.backToSignIn") : t("auth.createTitle"))
-                  if googleAvailable
-                    if pending(googleBrowser)
-                      button press=cancelGoogle testId="cancel-google"
-                        text t("auth.cancelGoogle")
-                    else
-                      button press=submitGoogle disabled=authBusy testId="google-sign-in"
-                        text t("auth.google")
-                else if authError == ""
-                  text t("auth.checking") color="-exact-secondary-label"
-                else
-                  button press=checkSession disabled=authBusy testId="retry-auth"
-                    text t("app.tryAgain")
-                if authError != ""
-                  text authErrorText(authError) color="-exact-system-red" role="alert" testId="auth-error"
-              text t("counter.title") role="heading" aria-level=2 font="-exact-title2" testId="counter-title"
-              text (live.status == "closed" ? t("counter.reconnecting") : live.status == "failed" or failed(counter) ? t("counter.loadFailed") : live.status == "ready" and counter.count >= 0 ? t("counter.connected") : t("counter.connecting")) testId="convex-status"
-              if counter.count >= 0
-                text formatNumber(counter.count, "decimal") font="-exact-large-title" testId="convex-count"
-              button press=increment disabled=(live.status != "ready" or counter.count < 0 or pending(incremented)) buttonStyle="filled" testId="convex-increment"
-                text (pending(incremented) ? t("counter.saving") : t("counter.increment"))
-              if failed(incremented)
-                text t("counter.saveFailed") color="-exact-system-red" testId="convex-error"
-              if live.status == "failed" or failed(counter)
-                button press=reconnectNow
-                  text t("counter.retry")
+    main testId="root" height="100%" width="100%" background-color="#f5f1e7"
+      scroll height="100%" width="100%"
+        column padding=24 gap=18
+          text "Paperstack" role="heading" aria-level=1 font-family="serif" font-size=42 color="#262d3c"
+          row gap=12 flex-wrap="wrap"
+            button press=toggle testId="mode"
+              text (reading ? "Edit draft" : "Preview draft")
+            if not reading
+              button press=heading aria-label="Format heading" testId="heading"
+                text "Heading"
+              button press=bold aria-label="Format bold" testId="bold"
+                text "Bold"
+          if reading
+            text current markup="markdown" font-family="serif" font-size=20 color="#262d3c" testId="reader"
+          else
+            textarea id="draft" markup="markdown" value=current input=edit testId="editor" aria-label="Markdown draft" width="100%" height=380 padding=16 background-color="#fffdf6" color="#262d3c" font-size=18
+          if failed(written)
+            text "Your changes could not be saved on this device." color="#9e3420"

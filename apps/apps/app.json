@@ -1,28 +1,27 @@
 {
   "$schema": ".exact/checkout/scripts/app.schema.json",
-  "name": "Apps",
-  "short_name": "Apps",
-  "id": "com.example.apps-8d662a",
+  "name": "Paperstack",
+  "short_name": "Paperstack",
+  "id": "dev.disposabl.fresh.paperstack",
   "start_url": "/",
   "display": "standalone",
   "env": [
-    "CONVEX_ORIGIN",
-    "CONVEX_SITE_ORIGIN"
+    "CONVEX_ORIGIN"
   ],
   "app": {
-    "id": "com.example.apps-8d662a",
-    "name": "Apps"
+    "id": "dev.disposabl.fresh.paperstack",
+    "name": "Paperstack"
   },
   "variants": {
     "preview": {
       "idSuffix": ".preview",
-      "name": "Apps Preview"
+      "name": "Paperstack Preview"
     }
   },
   "host": {
     "web": {},
     "android": {
-      "id": "dev.disposabl.exact"
+      "id": "dev.disposabl.fresh.paperstack"
     },
     "ios": {
       "minimumOS": "17.0",
